@@ -1,0 +1,3 @@
+* Work in progress esp32 toolchain setup in nix flakes
+
+    Don't use it yet unless you want to help get it working.
