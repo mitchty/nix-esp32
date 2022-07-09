@@ -58,18 +58,11 @@
           "fixupPhase"
         ];
 
-        # CC = "clang";
-        # CXX = "clang++";
-
         # http://quickhack.net/nom/blog/2019-05-14-build-rust-environment-for-esp32.html
-        #  -DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD="Xtensa;X86"
         buildPhase = ''
           install -d build
           cd build
-          # cmake -S ../llvm -DLLVM_ENABLE_PROJECTS="clang;libc;libclc;libcxx;libcxxabi;libunwind;lld" -DLLVM_INSTALL_UTILS=ON -DCMAKE_BUILD_TYPE=Release -G "Ninja"
-          # cmake -S ../llvm -DLLVM_ENABLE_PROJECTS="clang;libc;lld;libclc" -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi" -DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD="Xtensa;X86" -DLLVM_INSTALL_UTILS=ON -DCMAKE_BUILD_TYPE=Release -G "Ninja"
-          # cmake -S ../llvm -DLLVM_ENABLE_PROJECTS="clang" -DCMAKE_BUILD_TYPE=Release -G Ninja -DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD=Xtensa
-          # cmake -S ../llvm -D LLVM_ENABLE_PROJECTS="clang;libcxx;libcxxabi" -D LLVM_BUILD_LLVM_DYLIB= -D LLVM_EXPERIMENTAL_TARGETS_TO_BUILD=Xtensa -D LLVM_TARGETS_TO_BUILD=Xtensa -D TARGET_TRIPLE=xtensa-esp32-none-elf -D LLVM_DEFAULT_TARGET_TRIPLE=xtensa-esp32-none-elf -D LLVM_ENABLE_WARNINGS=OFF -D CMAKE_BUILD_TYPE=Release
+
           cmake -S ../llvm -D LLVM_ENABLE_PROJECTS="clang;libcxx;libcxxabi" -D LLVM_BUILD_LLVM_DYLIB= -D LLVM_EXPERIMENTAL_TARGETS_TO_BUILD=${target} -D LLVM_TARGETS_TO_BUILD=${target} -D CMAKE_BUILD_TYPE=Release
 
           cmake --build .
