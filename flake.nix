@@ -20,11 +20,13 @@
       packages = flake-utils.lib.flattenTree {
         llvm-xtensa = pkgs.callPackage ./packages/llvm-xtensa.nix { };
         esp-idf = pkgs.callPackage ./packages/esp-idf.nix { };
+        rustc-xtensa = pkgs.callPackage ./packages/rustc-xtensa.nix { packages = packages; };
       };
 
       apps = {
         llvm-xtensa = flake-utils.lib.mkApp { drv = packages.llvm-xtensa; };
         esp-idf = flake-utils.lib.mkApp { drv = packages.esp-idf; };
+        rustc-xtensa = flake-utils.lib.mkApp { drv = packages.rustc-xtensa; };
       };
 
       # Basically same as devShell but makes it easier to nix run .#... to use
@@ -35,6 +37,8 @@
 
           buildInputs = [
             packages.llvm-xtensa
+            packages.esp-idf
+            packages.rustc-xtensa
           ] ++ [
             pkgs.rust-bindgen
             pkgs.rust-analyzer
@@ -63,6 +67,7 @@
         ] ++ [
           packages.llvm-xtensa
           packages.esp-idf
+          packages.rustc-xtensa
         ];
         LIBCLANG_PATH = "${packages.llvm-xtensa}/lib";
       };
@@ -75,6 +80,7 @@
         # TODO: Build binutils as a cross compile chain and assemble the .S file
         # clang built to see if we're kosher.
         llvm-xtensa = pkgs.runCommand "check-llvm-xtensa" { } ''
+          ${packages.llvm-xtensa}/bin/clang --version
           asmfile=$(${pkgs.coreutils}/bin/mktemp /tmp/XXXXXXXX-llvm-xtensa.S)
           cleanup() { rm -f $asmfile > /dev/null 2>&1; }
           trap cleanup EXIT
@@ -86,10 +92,10 @@
           install -dm755 $out
         '';
         # TODO: rust..
-        # rustc-xtensa = pkgs.runCommand "check-rustc-xtensa" { } ''
-        #   ${rust-xtensa}/bin/rustc --version
-        #   install -dm755 $out
-        # '';
+        #   rustc-xtensa = pkgs.runCommand "check-rustc-xtensa" { } ''
+        #     ${packages.rustc-xtensa}/bin/rustc --version
+        #     install -dm755 $out
+        #   '';
       };
     });
 }

@@ -35,10 +35,6 @@ stdenv.mkDerivation rec {
     "fixupPhase"
   ];
 
-  # TODO: set this up a bit better, for now hacks is fine, builds at level 1 is
-  # sloooooow, beat the piss out of the cpus i'm using for now.
-  CMAKE_BUILD_PARALLEL_LEVEL = "8";
-
   # http://quickhack.net/nom/blog/2019-05-14-build-rust-environment-for-esp32.html
   buildPhase = ''
     install -d build
@@ -46,6 +42,7 @@ stdenv.mkDerivation rec {
 
     cmake -S ../llvm -D LLVM_ENABLE_PROJECTS="clang;libcxx;libcxxabi" -D LLVM_BUILD_LLVM_DYLIB= -D LLVM_EXPERIMENTAL_TARGETS_TO_BUILD=${target} -D LLVM_TARGETS_TO_BUILD=${target} -D CMAKE_BUILD_TYPE=Release
 
+    export CMAKE_BUILD_PARALLEL_LEVEL=$NIX_BUILD_CORES
     cmake --build .
   '';
 
