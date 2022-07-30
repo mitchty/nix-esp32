@@ -15,38 +15,76 @@
           (import rust)
         ];
       };
+      lib = pkgs.lib;
+      name = "rustc-xtensa";
+      version = "1.62.0.0";
+
+      src = pkgs.fetchFromGitHub {
+        owner = "esp-rs";
+        repo = "rust";
+        rev = "refs/heads/esp-${version}";
+        fetchSubmodules = true;
+        sha256 = "sha256-sqEHpCOrAnqIKdTFbdd1zk+yUWj3obNgACkAsQEGEBI=";
+      };
+
+      fetchCargoTarball = pkgs.callPackage (pkgs.path + /pkgs/build-support/rust/fetch-cargo-tarball) {
+        inherit lib;
+        stdenv = pkgs.stdenv;
+        cacert = pkgs.cacert;
+        python3 = pkgs.python3;
+        git = pkgs.git;
+        cargo = pkgs.cargo;
+      };
     in
     rec {
       packages = flake-utils.lib.flattenTree {
-        llvm-xtensa = pkgs.callPackage ./packages/llvm-xtensa.nix { };
-        esp-idf = pkgs.callPackage ./packages/esp-idf.nix { };
-        rustc-xtensa = pkgs.callPackage ./packages/rustc-xtensa.nix { packages = packages; };
-      };
+        # Neither of these seem to work with the derivation seeing python when
+        # it builds, macos or nixos 22.05 for that matter.
+        #
+        # I get...
+        # [1/0/1 built] building rustc-xtensa-vendor.tar.gz (configurePhase): ./configure: exec: line 18: python: not found
+        # yet...
+        # https://github.com/NixOS/nixpkgs/blob/master/pkgs/build-support/rust/fetch-cargo-tarball/default.nix#L36
+        # has
+        #   nativeBuildInputs = [ cacert git cargo-vendor-normalise cargo ] ++ nativeBuildInputs;
+        # Should all be good right? seemingly? I guess but not enitirely sure
+        # how to yoink in cargo-vendor-normalise as well as a dep as while this
+        # does get us to a mostly ok buildPhase it fails with this up top but
+        # does at least invoke cargo to vendor stuff at least, still every usage
+        # of fetchCargoTarball doesn't involve this level of shenanigans:
+        #
+        # @nix { "action": "setPhase", "phase": "buildPhase" }                                                                  building
+        # /nix/store/w4yyp4pm2czqhr0078c0wwlx2dk2dzqw-stdenv-linux/setup: line 1397: cargo-vendor-normalise: command not found  warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+        # package:   /build/source/src/tools/rls/racer/Cargo.toml                                                               workspace: /build/source/Cargo.toml
+        cargotarball = fetchCargoTarball {
+          inherit src name;
+          sha256 = pkgs.lib.fakeSha256;
+        };
+        cargotarballdrv = pkgs.rustPlatform.fetchCargoTarball {
+          inherit src name;
+          sha256 = pkgs.lib.fakeSha256;
+        };
 
-      apps = {
-        llvm-xtensa = flake-utils.lib.mkApp { drv = packages.llvm-xtensa; };
-        esp-idf = flake-utils.lib.mkApp { drv = packages.esp-idf; };
-        rustc-xtensa = flake-utils.lib.mkApp { drv = packages.rustc-xtensa; };
-      };
-
-      # Basically same as devShell but makes it easier to nix run .#... to use
-      # as a dev env in say nix-shell.
-      defaultApp = flake-utils.lib.mkApp {
-        drv = pkgs.stdenv.mkDerivation {
+        # Note: this *DOES* work around it but why in the world should I need to
+        # pass in duplicates for nativeBuildInputs already defined?
+        cargotarballdrvwithinputs = pkgs.rustPlatform.fetchCargoTarball {
+          inherit src name;
+          sha256 = pkgs.lib.fakeSha256;
+          nativeBuildInputs = with pkgs; [ cacert cargo git python3 ];
+        };
+        default = pkgs.stdenv.mkDerivation {
           name = "esp32-rs";
 
           buildInputs = [
-            packages.llvm-xtensa
-            packages.esp-idf
-            packages.rustc-xtensa
+            packages.cargotarball
+            packages.cargotarballdrv
+            packages.cargotarballdrvwithinputs
           ] ++ [
             pkgs.rust-bindgen
             pkgs.rust-analyzer
             pkgs.cargo-xbuild
             pkgs.openocd
           ];
-
-          LIBCLANG_PATH = "${packages.llvm-xtensa}/lib";
 
           src = ./.;
 
@@ -58,18 +96,29 @@
         };
       };
 
+      apps = {
+        cargotarball = flake-utils.lib.mkApp { drv = packages.cargotarball; };
+        cargotarballdrv = flake-utils.lib.mkApp { drv = packages.cargotarballdrv; };
+        cargotarballdrvwithinputs = flake-utils.lib.mkApp { drv = packages.cargotarballdrvwithinputs; };
+      };
+
+      # Basically same as devShell but makes it easier to nix run .#... to use
+      # as a dev env in say nix-shell.
+      defaultApp = flake-utils.lib.mkApp {
+        drv = packages.default;
+      };
+
       devShell = pkgs.mkShell {
         buildInputs = [
+          packages.cargotarball
+          packages.cargotarballdrv
+          packages.cargotarballdrvwithinputs
+        ] ++ [
           pkgs.rust-bindgen
           pkgs.rust-analyzer
           pkgs.cargo-xbuild
           pkgs.openocd
-        ] ++ [
-          packages.llvm-xtensa
-          packages.esp-idf
-          packages.rustc-xtensa
         ];
-        LIBCLANG_PATH = "${packages.llvm-xtensa}/lib";
       };
 
       checks = {
@@ -77,25 +126,6 @@
           ${pkgs.nixpkgs-fmt}/bin/nixpkgs-fmt --check ${./.}
           install -dm755 $out
         '';
-        # TODO: Build binutils as a cross compile chain and assemble the .S file
-        # clang built to see if we're kosher.
-        llvm-xtensa = pkgs.runCommand "check-llvm-xtensa" { } ''
-          ${packages.llvm-xtensa}/bin/clang --version
-          asmfile=$(${pkgs.coreutils}/bin/mktemp /tmp/XXXXXXXX-llvm-xtensa.S)
-          cleanup() { rm -f $asmfile > /dev/null 2>&1; }
-          trap cleanup EXIT
-          ${packages.llvm-xtensa}/bin/clang -target xtensa -fomit-frame-pointer -S ${./checks/test.c} -o $asmfile
-          install -dm755 $out
-        '';
-        # TODO: what to do here... to basic unit test...
-        esp-idf = pkgs.runCommand "check-esp-idf" { } ''
-          install -dm755 $out
-        '';
-        # TODO: rust..
-        #   rustc-xtensa = pkgs.runCommand "check-rustc-xtensa" { } ''
-        #     ${packages.rustc-xtensa}/bin/rustc --version
-        #     install -dm755 $out
-        #   '';
       };
     });
 }
